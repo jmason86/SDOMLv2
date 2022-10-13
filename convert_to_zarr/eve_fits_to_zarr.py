@@ -4,7 +4,10 @@ from scipy.io import readsav
 import zarr
 from numcodecs import Blosc, Delta
 from astropy.table import Table
+from astropy.time import Time
 import pandas as pd
+
+delta_seconds_1958_to_unix = 378691200  # TAI's formal epoch starts at 1958-01-01 while astropy uses unix_tai, which is from 1970-01-01
 
 
 def eve_fits_to_zarr():
@@ -44,7 +47,16 @@ def spectra_to_zarr():
 def read_spectra_source_file(filename):
     meta = Table.read(filename, format='fits', hdu=2)
     data = Table.read(filename, format='fits', hdu=3)
+    time = convert_time(data)
     pass
+
+
+def convert_time(data):
+    time = []
+    for tai in data['TAI']:
+        time.append(Time(tai - delta_seconds_1958_to_unix, format='unix_tai').iso)
+    return time
+
 
 
 if __name__ == "__main__":
