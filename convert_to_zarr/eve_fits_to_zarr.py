@@ -7,7 +7,7 @@ from astropy.table import Table
 from astropy.time import Time
 import pandas as pd
 
-delta_seconds_1958_to_unix = 378691200  # TAI's formal epoch starts at 1958-01-01 while astropy uses unix_tai, which is from 1970-01-01
+delta_seconds_1958_to_unix = Time('1958-01-01').unix_tai  # TAI's formal epoch starts at 1958-01-01 while astropy uses unix_tai, which is from 1970-01-01
 
 
 def eve_fits_to_zarr():
@@ -39,7 +39,7 @@ def format_lines_for_zarr(lines, root):
 def spectra_to_zarr():
     dataloc = '/Volumes/Roci Extension/sdo/eve/spectra/'
     filename = dataloc + 'EVS_L2_2011013_01_007_02.fit.gz'
-    bla = read_spectra_source_file(filename)
+    meta, data = read_spectra_source_file(filename)
     
     pass # TODO: Populate
 
@@ -47,16 +47,30 @@ def spectra_to_zarr():
 def read_spectra_source_file(filename):
     meta = Table.read(filename, format='fits', hdu=2)
     data = Table.read(filename, format='fits', hdu=3)
+    
     time = convert_time(data)
-    pass
+    data.add_column(time, name='TIME_ISO', index=0)
+    meta.add_column('ISO8601 UTC Time', name='TIME_ISO', index=0)
+    data['IRRADIANCE'] = replace_fill_values(data)
+
+    # Drop unnecessary columns (TAI, YYYYDOY, SOD, FLAGS, SC_FLAGS, INT_TIME, COUNT_RATE, PRECISION, BIN_FLAGS)
+    data = data['TIME_ISO', 'IRRADIANCE']  
+    meta = meta['TIME_ISO', 'IRRADIANCE']
+
+    return meta, data  # TODO: Could have a test here to make sure that these are returned in the expected order (meta is a table with length 1, for example)
 
 
 def convert_time(data):
     time = []
     for tai in data['TAI']:
-        time.append(Time(tai - delta_seconds_1958_to_unix, format='unix_tai').iso)
+        time.append(Time(tai + delta_seconds_1958_to_unix, format='unix_tai').iso)
     return time
 
+
+def replace_fill_values(data):
+    irradiance = data['IRRADIANCE']
+    irradiance[irradiance == -1] = np.nan  # Required by Zarr spec https://zarr.readthedocs.io/en/stable/spec/v2.html#fill-value-encoding
+    return irradiance
 
 
 if __name__ == "__main__":
