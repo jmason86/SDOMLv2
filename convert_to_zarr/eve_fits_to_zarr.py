@@ -39,8 +39,9 @@ def format_lines_for_zarr(lines, root):
 def spectra_to_zarr():
     dataloc = '/Volumes/Roci Extension/sdo/eve/spectra/'
     filename = dataloc + 'EVS_L2_2011013_01_007_02.fit.gz'
-    meta, data = read_spectra_source_file(filename)
-    
+    meta, data = read_spectra_source_file(filename) 
+    tmp = store_spectra_in_zarr(meta, data)
+
     pass # TODO: Populate
 
 
@@ -71,6 +72,25 @@ def replace_fill_values(data):
     irradiance = data['IRRADIANCE']
     irradiance[irradiance == -1] = np.nan  # Required by Zarr spec https://zarr.readthedocs.io/en/stable/spec/v2.html#fill-value-encoding
     return irradiance
+
+
+def store_spectra_in_zarr(meta, data, spectra_output_filename='eve_spectra.zarr'):
+    store = zarr.DirectoryStore(spectra_output_filename)
+    compressor = Blosc(cname='zstd', clevel=5, shuffle=Blosc.BITSHUFFLE)
+    
+    root = zarr.group(store=store, overwrite=True)
+    spectra = root.create_group('Spectra')
+    
+    time = spectra.create_dataset('TIME_ISO', shape=(np.shape(data)[0]), dtype='<U23', compressor=compressor)
+    time[:] = data['TIME_ISO'].value
+    time.attrs['UNITS'] = meta['TIME_ISO'].value[0]
+    
+    irradiance = spectra.create_dataset('IRRADIANCE', shape=(np.shape(data['IRRADIANCE'])), dtype='>f4', compressor=compressor)
+    irradiance[:] = data['IRRADIANCE'].value
+    irradiance.attrs['UNITS'] = str(meta['IRRADIANCE'].value[0])
+
+
+    pass
 
 
 if __name__ == "__main__":
