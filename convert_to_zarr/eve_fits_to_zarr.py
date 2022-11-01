@@ -1,4 +1,6 @@
 import os
+import shutil
+import glob
 import numpy as np
 from scipy.io import readsav
 import zarr
@@ -11,8 +13,10 @@ delta_seconds_1958_to_unix = Time('1958-01-01').unix_tai  # TAI's formal epoch s
 
 
 def eve_fits_to_zarr():
+    eve_path = '/Volumes/Roci Extension/sdo/eve/'
     #lines_to_zarr() # "lines" here refers to the extracted emission lines data product
-    spectra_to_zarr() # and this is the full spectra data product
+    spectra_to_zarr(path_to_input_data=eve_path + 'spectra/', 
+                    spectra_output_filename=eve_path + '/spectra/eve_spectra.zarr') # and this is the full spectra data product
 
 
 def lines_to_zarr(lines_output_filename='eve_lines.zarr'):
@@ -36,13 +40,21 @@ def format_lines_for_zarr(lines, root):
     pass # TODO Populate based on Meng's code
 
 
-def spectra_to_zarr():
-    dataloc = '/Volumes/Roci Extension/sdo/eve/spectra/'
-    filename = dataloc + 'EVS_L2_2011013_01_007_02.fit.gz'
-    meta, data = read_spectra_source_file(filename) 
-    tmp = store_spectra_in_zarr(meta, data)
+def spectra_to_zarr(path_to_input_data, spectra_output_filename):
+    remove_old_zarr_file(spectra_output_filename)
+    
+    input_filenames = glob.glob(path_to_input_data + 'EVS_L2_*.fit*')
+    for filename in input_filenames:
+        meta, data = read_spectra_source_file(filename) 
+        store_spectra_in_zarr(meta, data, spectra_output_filename) # TODO: need to prevent override of the .zarr file in this loop
 
     pass # TODO: Populate
+
+
+def remove_old_zarr_file(spectra_output_filename): 
+    if os.path.exists(spectra_output_filename):
+        shutil.rmtree(spectra_output_filename)
+
 
 
 def read_spectra_source_file(filename):
@@ -74,23 +86,25 @@ def replace_fill_values(data):
     return irradiance
 
 
-def store_spectra_in_zarr(meta, data, spectra_output_filename='eve_spectra.zarr'):
+def store_spectra_in_zarr(meta, data, spectra_output_filename):
     store = zarr.DirectoryStore(spectra_output_filename)
-    compressor = Blosc(cname='zstd', clevel=5, shuffle=Blosc.BITSHUFFLE)
+    root = zarr.group(store=store, overwrite=False)
     
-    root = zarr.group(store=store, overwrite=True)
-    spectra = root.create_group('Spectra')
-    
-    time = spectra.create_dataset('TIME_ISO', shape=(np.shape(data)[0]), dtype='<U23', compressor=compressor)
-    time[:] = data['TIME_ISO'].value
-    time.attrs['UNITS'] = meta['TIME_ISO'].value[0]
-    
-    irradiance = spectra.create_dataset('IRRADIANCE', shape=(np.shape(data['IRRADIANCE'])), dtype='>f4', compressor=compressor)
-    irradiance[:] = data['IRRADIANCE'].value
-    irradiance.attrs['UNITS'] = str(meta['IRRADIANCE'].value[0])
+    if 'Spectra' not in root: 
+        spectra = root.create_group('Spectra')
+        compressor = Blosc(cname='zstd', clevel=5, shuffle=Blosc.BITSHUFFLE)
+        time = spectra.create_dataset('TIME_ISO', shape=(np.shape(data)[0]), dtype='<U23', compressor=compressor)
+        irradiance = spectra.create_dataset('IRRADIANCE', shape=(np.shape(data['IRRADIANCE'])), dtype='>f4', compressor=compressor)
 
-
-    pass
+        time.attrs['UNITS'] = meta['TIME_ISO'].value[0]
+        irradiance.attrs['UNITS'] = str(meta['IRRADIANCE'].value[0])
+    else: 
+        spectra = root['Spectra']
+        time = spectra['TIME_ISO']
+        irradiance = spectra['IRRADIANCE']
+    
+    time.append(data['TIME_ISO'].value)
+    irradiance.append(data['IRRADIANCE'].value)
 
 
 if __name__ == "__main__":
