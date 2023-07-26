@@ -18,5 +18,6 @@ dependencies:
   - zarr=2.12.0
   - gcsfs=2022.7.1
   - numcodecs=0.10.2
+  - boto3=1.26.76
 
 prefix: ~/anaconda3
