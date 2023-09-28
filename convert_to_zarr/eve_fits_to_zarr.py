@@ -10,16 +10,16 @@ from astropy.time import Time
 import pandas as pd
 from datetime import datetime
 
-eve_path = '/Volumes/Roci Extension 1/sdo/eve/'
-eve_output_filename = eve_path + 'eve.zarr'
+eve_path = '/Volumes/Roci Extension/sdo/eve/'
+eve_output_filename = eve_path + 'eve_L2B_2020-2023.zarr'
 delta_seconds_1958_to_unix = Time('1958-01-01').unix_tai  # TAI's formal epoch starts at 1958-01-01 while astropy uses unix_tai, which is from 1970-01-01
 
 
-def eve_fits_to_zarr(remove_old_zarr_file=False):    
+def eve_fits_to_zarr(do_remove_old_zarr_file=False):    
     meta_lines, data_lines, evl_filenames_to_process = read_lines()
     meta_spectra, data_spectra, evs_filenames_to_process = read_spectra()
 
-    if remove_old_zarr_file: 
+    if do_remove_old_zarr_file: 
         remove_old_zarr_file(eve_output_filename)
         setup_zarr_file(eve_output_filename, meta_lines, data_lines, meta_spectra, data_spectra)
     store_lines_in_zarr(meta_lines, data_lines, eve_output_filename)
@@ -35,7 +35,7 @@ def remove_old_zarr_file(output_filename):
     
 
 def read_lines(): 
-    all_evl_filenames = sorted(glob.glob(eve_path + 'lines/EVL_L2_*.fit*'))
+    all_evl_filenames = sorted(glob.glob(eve_path + 'lines/EVL_L2B_*.fit*'))
     start_filename = get_start_filename_from_log(evl_or_evs='evl')
     start_index = all_evl_filenames.index(start_filename)
     end_index = min(start_index + 10, len(all_evl_filenames)) # batch to 10 files at a time
@@ -53,11 +53,11 @@ def read_lines():
 def get_start_filename_from_log(evl_or_evs='evl'): 
     df = pd.read_csv(eve_path + '/processing_log.txt', names=['timestamp', 'processing', 'filename'])
     if evl_or_evs == 'evl':
-        df = df[df['filename'].str.contains('EVL_')]
-        input_filenames = sorted(glob.glob(eve_path + 'lines/EVL_L2_*.fit*'))  
+        df = df[df['filename'].str.contains('EVL_L2B_')]
+        input_filenames = sorted(glob.glob(eve_path + 'lines/EVL_L2B_*.fit*'))  
     else: 
-        df = df[df['filename'].str.contains('EVS_')]
-        input_filenames = sorted(glob.glob(eve_path + 'spectra/EVS_L2_*.fit*')) 
+        df = df[df['filename'].str.contains('EVS_L2B_')]
+        input_filenames = sorted(glob.glob(eve_path + 'spectra/EVS_L2B_*.fit*')) 
     
     last_filename = df['filename'].iloc[-1]
     filtered_filenames = [filename for filename in input_filenames if os.path.basename(filename) > os.path.basename(last_filename)]
@@ -82,7 +82,7 @@ def read_lines_source_file(filename):
 
 
 def read_spectra():
-    all_evs_filenames = sorted(glob.glob(eve_path + 'spectra/EVS_L2_*.fit*'))
+    all_evs_filenames = sorted(glob.glob(eve_path + 'spectra/EVS_L2B_*.fit*'))
     start_filename = get_start_filename_from_log(evl_or_evs='evs')
     start_index = all_evs_filenames.index(start_filename)
     end_index = min(start_index + 10, len(all_evs_filenames)) # batch to 10 files at a time
@@ -127,9 +127,13 @@ def setup_zarr_file(eve_output_filename, meta_lines, data_lines, meta_spectra, d
     irradiance = lines.create_dataset('IRRADIANCE', shape=(np.shape(data_lines['IRRADIANCE'])), dtype='>f4', compressor=compressor)
 
     time.attrs['UNITS'] = 'Universal Coordinated Time (UTC) in ISO8601 format'
+    wavelength[:] = meta_lines['WAVE_CENTER'].value.data
     wavelength.attrs['UNITS'] = 'nm'
+    logt[:] = meta_lines['LOGT'].value.data
     logt.attrs['UNITS'] = 'log_10 of temperature in Kelvin'
+    ion[:] = meta_lines['NAME'].value.data
     ion.attrs['NOTE'] = 'This is the _dominate_ ion in the spectral range integrated to create this line. There may be other emission lines blended in (see "blends").'
+    blends[:] = meta_lines['BLENDS'].value.data
     blends.attrs['NOTE'] = 'These are the other emission lines that are blended with the dominate emission listed in "ion".'
     irradiance.attrs['UNITS'] = 'W m^-2'
 
@@ -155,10 +159,10 @@ def store_lines_in_zarr(meta, data, lines_output_filename):
     irradiance = lines['IRRADIANCE']
 
     time.append(data['TIME_ISO'].value)
-    wavelength.append(meta['WAVE_CENTER'].value)
-    logt.append(meta['LOGT'].value)
-    ion.append(meta['NAME'].value)
-    blends.append(meta['BLENDS'].value)
+    #wavelength.append(meta['WAVE_CENTER'].value)
+    #logt.append(meta['LOGT'].value)
+    #ion.append(meta['NAME'].value)
+    #blends.append(meta['BLENDS'].value)
     irradiance.append(data['IRRADIANCE'].value)
 
 
@@ -198,4 +202,5 @@ def log_processed_files(filenames):
 
 
 if __name__ == "__main__":
-    eve_fits_to_zarr()
+    while True:
+        eve_fits_to_zarr()
